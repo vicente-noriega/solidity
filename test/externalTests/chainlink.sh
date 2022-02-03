@@ -62,7 +62,8 @@ function chainlink_test
 
     cd "contracts/"
 
-    neutralize_package_lock
+    # TMP: Try running with hard-coded dependencies
+    #neutralize_package_lock
     neutralize_package_json_hooks
     name_hardhat_default_export "$config_file" "$config_var"
     force_hardhat_compiler_binary "$config_file" "$BINARY_TYPE" "$BINARY_PATH"
