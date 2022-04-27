@@ -315,6 +315,16 @@ Type const* Type::fullEncodingType(bool _inLibraryCall, bool _encoderV2, bool) c
 	if (_inLibraryCall && encodingType && encodingType->dataStoredIn(DataLocation::Storage))
 		return encodingType;
 	Type const* baseType = encodingType;
+
+	if (auto const inlineArray = dynamic_cast<InlineArrayType const*>(baseType))
+	{
+		baseType = TypeProvider::array(
+			DataLocation::Memory,
+			inlineArray->componentsCommonMobileType(),
+			inlineArray->components().size()
+		);
+	}
+
 	while (auto const* arrayType = dynamic_cast<ArrayType const*>(baseType))
 	{
 		baseType = arrayType->baseType();
@@ -2697,6 +2707,106 @@ Type const* TupleType::mobileType() const
 	}
 	return TypeProvider::tuple(move(mobiles));
 }
+
+BoolResult InlineArrayType::isImplicitlyConvertibleTo(Type const& _other) const
+{
+	auto arrayType = dynamic_cast<ArrayType const*>(&_other);
+
+	if (arrayType && !arrayType->isByteArrayOrString())
+	{
+		if (!arrayType->isDynamicallySized())
+		{
+			if (arrayType->length() != components().size())
+				return false; //TODO return string
+		}
+
+		auto componets = components();
+		for (size_t i = 0; i < componets.size(); ++i)
+		{
+			if (!componets[i]->isImplicitlyConvertibleTo(*arrayType->baseType()))
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}
+	else
+		return false;
+}
+
+string InlineArrayType::richIdentifier() const
+{
+	return "t_inline_array" + identifierList(components());
+}
+
+bool InlineArrayType::operator==(Type const& _other) const
+{
+	if (auto inlineArrayType = dynamic_cast<InlineArrayType const*>(&_other))
+		// TODO: raise issue - do not compare by pointer for tuple type
+		return components() == inlineArrayType->components();
+	else
+		return false;
+}
+
+string InlineArrayType::toString(bool _short) const
+{
+	vector<string> result;
+
+	for (auto const& t: components())
+		result.push_back(t->toString(_short));
+
+	// TODO joinHumanReadable - is it fine to have a space here?
+	return "inline_array(" + util::joinHumanReadable(result) + ")";
+}
+
+u256 InlineArrayType::storageSize() const
+{
+	solAssert(false, "Storage size of non-storable InlineArrayType type requested.");
+}
+
+Type const* InlineArrayType::mobileType() const
+{
+	TypePointers mobiles;
+	for (auto const& c: components())
+	{
+		if (c)
+		{
+			auto mt = c->mobileType();
+			if (!mt)
+				return nullptr;
+			mobiles.push_back(mt);
+		}
+		else
+			mobiles.push_back(nullptr);
+	}
+	return TypeProvider::inlineArray(move(mobiles));
+}
+
+Type const* InlineArrayType::componentsCommonMobileType() const
+{
+	Type const* commonType = nullptr;
+	for (Type const* type: m_components)
+		commonType = commonType ?
+					Type::commonType(commonType, type->mobileType()) : type->mobileType();
+	return TypeProvider::withLocationIfReference(DataLocation::Memory, commonType);
+}
+
+vector<tuple<string, Type const*>> InlineArrayType::makeStackItems() const
+{
+	vector<tuple<string, Type const*>> slots;
+	unsigned i = 1;
+	for (auto const& t: components())
+	{
+		slots.emplace_back("component_" + std::to_string(i), t);
+		++i;
+	}
+	return slots;
+
+	//TODO do we want to keep everything on the stack?
+	//return {std::make_tuple("mpos", TypeProvider::uint256())};
+}
+
 
 FunctionType::FunctionType(FunctionDefinition const& _function, Kind _kind):
 	m_kind(_kind),

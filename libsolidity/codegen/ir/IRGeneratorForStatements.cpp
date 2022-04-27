@@ -492,8 +492,8 @@ bool IRGeneratorForStatements::visit(TupleExpression const& _tuple)
 {
 	setLocation(_tuple);
 
-	if (_tuple.isInlineArray())
-	{
+	//if (_tuple.isInlineArray())
+	/*{
 		auto const& arrayType = dynamic_cast<ArrayType const&>(*_tuple.annotation().type);
 		solAssert(!arrayType.isDynamicallySized(), "Cannot create dynamically sized inline array.");
 		define(_tuple) <<
@@ -518,13 +518,13 @@ bool IRGeneratorForStatements::visit(TupleExpression const& _tuple)
 				converted.commaSeparatedList() <<
 				")\n";
 		}
-	}
-	else
+	}*/
+	//else
 	{
 		bool willBeWrittenTo = _tuple.annotation().willBeWrittenTo;
 		if (willBeWrittenTo)
 			solAssert(!m_currentLValue);
-		if (_tuple.components().size() == 1)
+		if (!_tuple.isInlineArray() && _tuple.components().size() == 1)
 		{
 			solAssert(_tuple.components().front());
 			_tuple.components().front()->accept(*this);
@@ -2271,6 +2271,33 @@ void IRGeneratorForStatements::endVisit(IndexAccess const& _indexAccess)
 			}
 		}
 	}
+	else if (baseType.category() == Type::Category::InlineArray)
+	{
+		InlineArrayType const& inlineArrayType = dynamic_cast<InlineArrayType const&>(baseType);
+
+		ArrayType const* arrayType = TypeProvider::array(DataLocation::Memory, inlineArrayType.componentsCommonMobileType(), inlineArrayType.components().size());
+
+		IRVariable irArray = convert(IRVariable(_indexAccess.baseExpression()), *arrayType);
+
+		string const memAddress =
+			m_utils.memoryArrayIndexAccessFunction(*arrayType) +
+			"(" +
+			irArray.part("mpos").name() +
+			", " +
+			expressionAsType(*_indexAccess.indexExpression(), *TypeProvider::uint256()) +
+			")";
+
+		setLValue(_indexAccess, IRLValue{
+			*arrayType->baseType(),
+			IRLValue::Memory{memAddress}
+		});
+
+// TODO: replace "setLValue" with define to block following syntax "[0,1,2][0] = 3"
+//		define(IRVariable(IRNames::localVariable(_indexAccess), *baseType),
+//			   readFromLValue(IRLValue{*arrayType->baseType(), IRLValue::Memory{memAddress}})
+//		);
+	}
+
 	else if (baseType.category() == Type::Category::FixedBytes)
 	{
 		auto const& fixedBytesType = dynamic_cast<FixedBytesType const&>(baseType);

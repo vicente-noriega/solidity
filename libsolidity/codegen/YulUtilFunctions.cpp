@@ -31,6 +31,8 @@
 #include <libsolutil/StringUtils.h>
 #include <libsolidity/ast/TypeProvider.h>
 
+#include <range/v3/view/enumerate.hpp>
+
 using namespace std;
 using namespace solidity;
 using namespace solidity::util;
@@ -1896,6 +1898,74 @@ string YulUtilFunctions::copyArrayToStorageFunction(ArrayType const& _fromType, 
 }
 
 
+string YulUtilFunctions::copyInlineArrayToStorageFunction(InlineArrayType const& _fromType, ArrayType const& _toType)
+{
+	if (!_toType.isDynamicallySized())
+		solAssert(_fromType.components().size() <= _toType.length(), "");
+
+	string functionName = "copy_inline_array_to_storage_from_" + _fromType.identifier() + "_to_" + _toType.identifier();
+
+	vector<map<string, string>> memberSetValues;
+	unsigned stackItemIndex = 0;
+	for (auto&& [index, type]: _fromType.components() | ranges::views::enumerate)
+	{
+		memberSetValues.emplace_back();
+
+		memberSetValues.back()["setMember"] = Whiskers(R"(
+			{
+				let <memberValues> := <conversionFunction>(<value>)
+				<updateStorageValue>(elementSlot, elementOffset, <memberValues>)
+
+				<?multipleItemsPerSlot>
+					elementOffset := add(elementOffset, <storageStride>)
+					if gt(elementOffset, sub(32, <storageStride>)) {
+						elementOffset := 0
+						elementSlot := add(elementSlot, 1)
+					}
+				<!multipleItemsPerSlot>
+					elementSlot := add(elementSlot, <storageSize>)
+				</multipleItemsPerSlot>
+			}
+		)")
+		("memberValues", suffixedVariableNameList("memberValue_", stackItemIndex, stackItemIndex + _toType.baseType()->stackItems().size()))
+		("conversionFunction", conversionFunction(*type, *_toType.baseType()))
+		("value", suffixedVariableNameList("var_", stackItemIndex, stackItemIndex + type->sizeOnStack()))
+		("multipleItemsPerSlot", _toType.storageStride() <= 16)
+		("storageStride", to_string(_toType.storageStride()))
+		("storageSize", _toType.baseType()->storageSize().str())
+		("updateStorageValue", updateStorageValueFunction(*_fromType.componentsCommonMobileType(), *_toType.baseType()))
+		.render();
+
+		stackItemIndex += type->sizeOnStack();
+	}
+
+	return m_functionCollector.createFunction(functionName, [&](){
+		Whiskers templ(R"(
+			function <functionName>(slot, <values>) {
+				let length := <arrayLength>
+				<resizeArray>(slot, length)
+
+				let elementSlot := <dstDataLocation>(slot)
+				let elementOffset := 0
+
+				<#member>
+					<setMember>
+				</member>
+			}
+		)");
+		if (_fromType.dataStoredIn(DataLocation::Storage))
+			solAssert(!_fromType.isValueType(), "");
+		templ("functionName", functionName);
+		templ("values", suffixedVariableNameList("var_", 0, _fromType.sizeOnStack()));
+		templ("arrayLength", to_string(_fromType.components().size()));
+		templ("resizeArray", resizeArrayFunction(_toType));
+		templ("dstDataLocation", arrayDataAreaFunction(_toType));
+		templ("member", move(memberSetValues));
+
+		return templ.render();
+	});
+}
+
 string YulUtilFunctions::copyByteArrayToStorageFunction(ArrayType const& _fromType, ArrayType const& _toType)
 {
 	solAssert(
@@ -2759,6 +2829,26 @@ string YulUtilFunctions::updateStorageValueFunction(
 		auto const* fromReferenceType = dynamic_cast<ReferenceType const*>(&_fromType);
 		solAssert(toReferenceType, "");
 
+		Whiskers templ(R"(
+			function <functionName>(slot, <?dynamicOffset>offset, </dynamicOffset><value>) {
+				<?dynamicOffset>if offset { <panic>() }</dynamicOffset>
+				<copyToStorage>(slot, <value>)
+			}
+		)");
+		templ("functionName", functionName);
+		templ("dynamicOffset", !_offset.has_value());
+		templ("panic", panicFunction(PanicCode::Generic));
+		templ("value", suffixedVariableNameList("value_", 0, _fromType.sizeOnStack()));
+
+		if (_fromType.category() == Type::Category::InlineArray)
+		{
+			templ("copyToStorage", copyInlineArrayToStorageFunction(
+				dynamic_cast<InlineArrayType const&>(_fromType),
+				dynamic_cast<ArrayType const&>(_toType)
+			));
+			return templ.render();
+		}
+
 		if (!fromReferenceType)
 		{
 			solAssert(_fromType.category() == Type::Category::StringLiteral, "");
@@ -2790,16 +2880,7 @@ string YulUtilFunctions::updateStorageValueFunction(
 			solAssert(toReferenceType->category() == fromReferenceType->category(), "");
 		solAssert(_offset.value_or(0) == 0, "");
 
-		Whiskers templ(R"(
-			function <functionName>(slot, <?dynamicOffset>offset, </dynamicOffset><value>) {
-				<?dynamicOffset>if offset { <panic>() }</dynamicOffset>
-				<copyToStorage>(slot, <value>)
-			}
-		)");
-		templ("functionName", functionName);
-		templ("dynamicOffset", !_offset.has_value());
-		templ("panic", panicFunction(PanicCode::Generic));
-		templ("value", suffixedVariableNameList("value_", 0, _fromType.sizeOnStack()));
+
 		if (_fromType.category() == Type::Category::Array)
 			templ("copyToStorage", copyArrayToStorageFunction(
 				dynamic_cast<ArrayType const&>(_fromType),
@@ -3271,6 +3352,11 @@ string YulUtilFunctions::conversionFunction(Type const& _from, Type const& _to)
 		solAssert(_to.category() == Type::Category::Array, "");
 		return arrayConversionFunction(fromArrayType, dynamic_cast<ArrayType const&>(_to));
 	}
+	else if (_from.category() == Type::Category::InlineArray)
+	{
+		solAssert(_to.category() == Type::Category::Array, "");
+		return inlineArrayConversionFunction(dynamic_cast<InlineArrayType const&>(_from), dynamic_cast<ArrayType const&>(_to));
+	}
 
 	if (_from.sizeOnStack() != 1 || _to.sizeOnStack() != 1)
 		return conversionFunctionSpecial(_from, _to);
@@ -3715,6 +3801,73 @@ string YulUtilFunctions::arrayConversionFunction(ArrayType const& _from, ArrayTy
 			);
 		else
 			solAssert(false, "");
+
+		return templ.render();
+	});
+}
+
+string YulUtilFunctions::inlineArrayConversionFunction(InlineArrayType const& _from, ArrayType const& _to)
+{
+	if (_to.dataStoredIn(DataLocation::CallData))
+		solAssert(false);
+
+	if (!_to.isDynamicallySized())
+		solAssert(_to.length() == _from.components().size());
+
+	// TODO
+	// Other cases are done explicitly in LValue::storeValue, and only possible by assignment.
+	/*if (_to.location() == DataLocation::Storage)
+		solAssert(
+			(_to.isPointer() || (_from.isByteArrayOrString() && _to.isByteArrayOrString())) &&
+			_from.location() == DataLocation::Storage,
+			"Invalid conversion to storage type."
+		);
+	*/
+	string functionName =
+		"convert_inline_array_" +
+		_from.identifier() +
+		"_to_" +
+		_to.identifier();
+
+	vector<map<string, string>> memberSetValues;
+	unsigned stackItemIndex = 0;
+
+	for (auto&& [index, type]: _from.components() | ranges::views::enumerate)
+	{
+		memberSetValues.emplace_back();
+		memberSetValues.back()["setMember"] = Whiskers(R"(
+			{
+				let <memberValues> := <conversionFunction>(<value>)
+				<writeToMemory>(add(mpos, <offset>), <memberValues>)
+			}
+		)")
+		("memberValues", suffixedVariableNameList("memberValue_", 0, _to.baseType()->stackItems().size()))
+		("offset", to_string(0x20 * index))
+		("value", suffixedVariableNameList("var_", stackItemIndex, stackItemIndex + type->sizeOnStack()))
+		("conversionFunction", conversionFunction(*type, *_to.baseType()))
+		("writeToMemory", writeToMemoryFunction(*_to.baseType()))
+		.render();
+
+		stackItemIndex += type->sizeOnStack();
+	}
+
+	return m_functionCollector.createFunction(functionName, [&]() {
+		Whiskers templ(R"(
+			function <functionName>(<values>) -> converted {
+				converted := <allocateArray>(<length>)
+				let mpos := converted
+				<?toDynamic>mpos := add(mpos, 0x20)</toDynamic>
+				<#member>
+					<setMember>
+				</member>
+			}
+		)");
+		templ("functionName", functionName);
+		templ("allocateArray", allocateMemoryArrayFunction(_to));
+		templ("length", toCompactHexWithPrefix(_from.components().size()));
+		templ("toDynamic", _to.isDynamicallySized());
+		templ("values", suffixedVariableNameList("var_", 0, _from.sizeOnStack()));
+		templ("member", move(memberSetValues));
 
 		return templ.render();
 	});
