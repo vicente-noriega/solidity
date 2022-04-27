@@ -3284,7 +3284,7 @@ bool TypeChecker::visit(IndexAccess const& _access)
 	{
 		InlineArrayType const& actualType = dynamic_cast<InlineArrayType const&>(*baseType);
 		if (!index)
-			m_errorReporter.typeError(9689_error, _access.location(), "Index expression cannot be omitted.");
+			m_errorReporter.typeError(5093_error, _access.location(), "Index expression cannot be omitted.");
 		else
 			expectType(*index, *TypeProvider::uint256());
 
