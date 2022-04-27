@@ -2720,10 +2720,9 @@ BoolResult InlineArrayType::isImplicitlyConvertibleTo(Type const& _other) const
 				return false; //TODO return string
 		}
 
-		auto componets = components();
-		for (size_t i = 0; i < componets.size(); ++i)
+		for (size_t i = 0; i < components().size(); ++i)
 		{
-			if (!componets[i]->isImplicitlyConvertibleTo(*arrayType->baseType()))
+			if (!components()[i]->isImplicitlyConvertibleTo(*arrayType->baseType()))
 			{
 				return false;
 			}
