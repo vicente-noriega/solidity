@@ -1422,26 +1422,7 @@ bool TypeChecker::visit(Conditional const& _conditional)
 		BOOST_THROW_EXCEPTION(FatalError());
 	else if (trueType && falseType)
 	{
-		if (trueType->category() == Type::Category::InlineArray &&
-			falseType->category() == Type::Category::InlineArray)
-		{
-			auto const* inlineArrayTrueType = dynamic_cast<InlineArrayType const*>(trueType);
-			auto const* inlineArrayFalseType = dynamic_cast<InlineArrayType const*>(falseType);
-
-			if (inlineArrayTrueType->components().size() == inlineArrayFalseType->components().size())
-			{
-				auto const* componentsMobileTrueType = inlineArrayTrueType->componentsCommonMobileType();
-				auto const* componentsMobileFalseType = inlineArrayFalseType->componentsCommonMobileType();
-
-				commonType = TypeProvider::array(DataLocation::Memory, Type::commonType(
-					componentsMobileTrueType,
-					componentsMobileFalseType
-				), dynamic_cast<InlineArrayType const*>(trueType)->components().size() );
-			}
-		}
-		else
-			commonType = Type::commonType(trueType, falseType);
-
+		commonType = Type::commonType(trueType, falseType);
 		if (!commonType)
 		{
 			m_errorReporter.typeError(

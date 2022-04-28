@@ -2712,26 +2712,19 @@ BoolResult InlineArrayType::isImplicitlyConvertibleTo(Type const& _other) const
 {
 	auto arrayType = dynamic_cast<ArrayType const*>(&_other);
 
-	if (arrayType && !arrayType->isByteArrayOrString())
+	if (!arrayType || arrayType->isByteArrayOrString())
+		return false;
+	else
 	{
-		if (!arrayType->isDynamicallySized())
-		{
-			if (arrayType->length() != components().size())
-				return false; //TODO return string
-		}
+		if (!arrayType->isDynamicallySized() && arrayType->length() != components().size())
+			return false; //TODO return string
 
-		for (size_t i = 0; i < components().size(); ++i)
-		{
-			if (!components()[i]->isImplicitlyConvertibleTo(*arrayType->baseType()))
-			{
+		for (Type const* c: components())
+			if (!c->isImplicitlyConvertibleTo(*arrayType->baseType()))
 				return false;
-			}
-		}
 
 		return true;
 	}
-	else
-		return false;
 }
 
 string InlineArrayType::richIdentifier() const
@@ -2779,7 +2772,11 @@ Type const* InlineArrayType::mobileType() const
 		else
 			mobiles.push_back(nullptr);
 	}
-	return TypeProvider::inlineArray(move(mobiles));
+	return TypeProvider::array(
+		DataLocation::Memory,
+		componentsCommonMobileType(),
+		components().size()
+	);
 }
 
 Type const* InlineArrayType::componentsCommonMobileType() const
@@ -2789,6 +2786,17 @@ Type const* InlineArrayType::componentsCommonMobileType() const
 		commonType = commonType ?
 					Type::commonType(commonType, type->mobileType()) : type->mobileType();
 	return TypeProvider::withLocationIfReference(DataLocation::Memory, commonType);
+}
+
+Type const* InlineArrayType::fullEncodingType(bool _inLibraryCall, bool _encoderV2, bool _packed) const
+{
+	ArrayType const& arrayType = *TypeProvider::array(
+		DataLocation::Memory,
+		componentsCommonMobileType(),
+		components().size()
+	);
+
+	return arrayType.fullEncodingType(_inLibraryCall, _encoderV2, _packed);
 }
 
 vector<tuple<string, Type const*>> InlineArrayType::makeStackItems() const

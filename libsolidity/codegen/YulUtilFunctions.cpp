@@ -1905,41 +1905,42 @@ string YulUtilFunctions::copyInlineArrayToStorageFunction(InlineArrayType const&
 
 	string functionName = "copy_inline_array_to_storage_from_" + _fromType.identifier() + "_to_" + _toType.identifier();
 
-	vector<map<string, string>> memberSetValues;
-	unsigned stackItemIndex = 0;
-	for (auto&& [index, type]: _fromType.components() | ranges::views::enumerate)
-	{
-		memberSetValues.emplace_back();
-
-		memberSetValues.back()["setMember"] = Whiskers(R"(
-			{
-				let <memberValues> := <conversionFunction>(<value>)
-				<updateStorageValue>(elementSlot, elementOffset, <memberValues>)
-
-				<?multipleItemsPerSlot>
-					elementOffset := add(elementOffset, <storageStride>)
-					if gt(elementOffset, sub(32, <storageStride>)) {
-						elementOffset := 0
-						elementSlot := add(elementSlot, 1)
-					}
-				<!multipleItemsPerSlot>
-					elementSlot := add(elementSlot, <storageSize>)
-				</multipleItemsPerSlot>
-			}
-		)")
-		("memberValues", suffixedVariableNameList("memberValue_", stackItemIndex, stackItemIndex + _toType.baseType()->stackItems().size()))
-		("conversionFunction", conversionFunction(*type, *_toType.baseType()))
-		("value", suffixedVariableNameList("var_", stackItemIndex, stackItemIndex + type->sizeOnStack()))
-		("multipleItemsPerSlot", _toType.storageStride() <= 16)
-		("storageStride", to_string(_toType.storageStride()))
-		("storageSize", _toType.baseType()->storageSize().str())
-		("updateStorageValue", updateStorageValueFunction(*_fromType.componentsCommonMobileType(), *_toType.baseType()))
-		.render();
-
-		stackItemIndex += type->sizeOnStack();
-	}
-
 	return m_functionCollector.createFunction(functionName, [&](){
+
+		vector<map<string, string>> memberSetValues;
+		unsigned stackItemIndex = 0;
+		for (auto&& [index, type]: _fromType.components() | ranges::views::enumerate)
+		{
+			memberSetValues.emplace_back();
+
+			memberSetValues.back()["setMember"] = Whiskers(R"(
+				{
+					let <memberValues> := <conversionFunction>(<value>)
+					<updateStorageValue>(elementSlot, elementOffset, <memberValues>)
+
+					<?multipleItemsPerSlot>
+						elementOffset := add(elementOffset, <storageStride>)
+						if gt(elementOffset, sub(32, <storageStride>)) {
+							elementOffset := 0
+							elementSlot := add(elementSlot, 1)
+						}
+					<!multipleItemsPerSlot>
+						elementSlot := add(elementSlot, <storageSize>)
+					</multipleItemsPerSlot>
+				}
+			)")
+			("memberValues", suffixedVariableNameList("memberValue_", stackItemIndex, stackItemIndex + _toType.baseType()->stackItems().size()))
+			("conversionFunction", conversionFunction(*type, *_toType.baseType()))
+			("value", suffixedVariableNameList("var_", stackItemIndex, stackItemIndex + type->sizeOnStack()))
+			("multipleItemsPerSlot", _toType.storageStride() <= 16)
+			("storageStride", to_string(_toType.storageStride()))
+			("storageSize", _toType.baseType()->storageSize().str())
+			("updateStorageValue", updateStorageValueFunction(*_fromType.componentsCommonMobileType(), *_toType.baseType()))
+			.render();
+
+			stackItemIndex += type->sizeOnStack();
+		}
+
 		Whiskers templ(R"(
 			function <functionName>(slot, <values>) {
 				let length := <arrayLength>
@@ -3836,10 +3837,8 @@ string YulUtilFunctions::inlineArrayConversionFunction(InlineArrayType const& _f
 	{
 		memberSetValues.emplace_back();
 		memberSetValues.back()["setMember"] = Whiskers(R"(
-			{
-				let <memberValues> := <conversionFunction>(<value>)
-				<writeToMemory>(add(mpos, <offset>), <memberValues>)
-			}
+			let <memberValues> := <conversionFunction>(<value>)
+			<writeToMemory>(add(mpos, <offset>), <memberValues>)
 		)")
 		("memberValues", suffixedVariableNameList("memberValue_", 0, _to.baseType()->stackItems().size()))
 		("offset", to_string(0x20 * index))
@@ -3858,7 +3857,9 @@ string YulUtilFunctions::inlineArrayConversionFunction(InlineArrayType const& _f
 				let mpos := converted
 				<?toDynamic>mpos := add(mpos, 0x20)</toDynamic>
 				<#member>
+				{
 					<setMember>
+				}
 				</member>
 			}
 		)");

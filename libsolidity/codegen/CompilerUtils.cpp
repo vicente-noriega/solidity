@@ -433,15 +433,6 @@ void CompilerUtils::encodeToMemory(
 	solAssert(targetTypes.size() == _givenTypes.size());
 	for (Type const*& t: targetTypes)
 	{
-		if (auto const inlineArray = dynamic_cast<InlineArrayType const*>(t))
-		{
-			t = TypeProvider::array(
-				DataLocation::Memory,
-				inlineArray->componentsCommonMobileType(),
-				inlineArray->components().size()
-			);
-		}
-
 		Type const* tEncoding = t->fullEncodingType(_encodeAsLibraryTypes, encoderV2, !_padToWordBoundaries);
 		solUnimplementedAssert(tEncoding, "Encoding type \"" + t->toString() + "\" not yet implemented.");
 		t = std::move(tEncoding);

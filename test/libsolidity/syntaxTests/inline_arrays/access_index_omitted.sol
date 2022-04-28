@@ -4,4 +4,4 @@ contract C {
     }
 }
 // ----
-// TypeError 5093: (57-68): Index expression cannot be omitted.
+// TypeError 5093: (56-67): Index expression cannot be omitted.
