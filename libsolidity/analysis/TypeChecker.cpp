@@ -66,6 +66,11 @@ bool TypeChecker::typeSupportedByOldABIEncoder(Type const& _type, bool _isLibrar
 		if (!typeSupportedByOldABIEncoder(*base, _isLibraryCall) || (base->category() == Type::Category::Array && base->isDynamicallySized()))
 			return false;
 	}
+	if (_type.category() == Type::Category::InlineArray)
+	{
+		auto const& inlineArray = dynamic_cast<InlineArrayType const&>(_type);
+		return typeSupportedByOldABIEncoder(*inlineArray.mobileType(), _isLibraryCall);
+	}
 	return true;
 }
 
@@ -1594,7 +1599,7 @@ bool TypeChecker::visit(TupleExpression const& _tuple)
 				if (dynamic_cast<TupleType const&>(*types[i]).components().empty())
 				{
 					if (_tuple.isInlineArray())
-						m_errorReporter.typeError(5604_error, components[i]->location(), "Array component cannot be empty.");
+						m_errorReporter.fatalTypeError(5604_error, components[i]->location(), "Array component cannot be empty.");
 					else
 						m_errorReporter.typeError(6473_error, components[i]->location(), "Tuple component cannot be empty.");
 				}
@@ -2030,10 +2035,9 @@ void TypeChecker::typeCheckABIEncodeFunctions(
 	}
 
 	// Check additional arguments for variadic functions
-	vector<ASTPointer<Expression const>> const& arguments = _functionCall.arguments();
-	for (size_t i = 0; i < arguments.size(); ++i)
+	for (auto const& argument : _functionCall.arguments())
 	{
-		Type const* argType = type(*arguments[i]);
+		Type const* argType = type(*argument);
 
 		if (argType->category() == Type::Category::RationalNumber)
 		{
@@ -2042,7 +2046,7 @@ void TypeChecker::typeCheckABIEncodeFunctions(
 			{
 				m_errorReporter.typeError(
 					6090_error,
-					arguments[i]->location(),
+					argument->location(),
 					"Fractional numbers cannot yet be encoded."
 				);
 				continue;
@@ -2051,7 +2055,7 @@ void TypeChecker::typeCheckABIEncodeFunctions(
 			{
 				m_errorReporter.typeError(
 					8009_error,
-					arguments[i]->location(),
+					argument->location(),
 					"Invalid rational number (too large or division by zero)."
 				);
 				continue;
@@ -2060,7 +2064,7 @@ void TypeChecker::typeCheckABIEncodeFunctions(
 			{
 				m_errorReporter.typeError(
 					7279_error,
-					arguments[i]->location(),
+					argument->location(),
 					"Cannot perform packed encoding for a literal."
 					" Please convert it to an explicit type first."
 				);
@@ -2068,20 +2072,11 @@ void TypeChecker::typeCheckABIEncodeFunctions(
 			}
 		}
 
-		if (auto const inlineArray = dynamic_cast<InlineArrayType const*>(argType))
-		{
-			argType = TypeProvider::array(
-				DataLocation::Memory,
-				inlineArray->componentsCommonMobileType(),
-				inlineArray->components().size()
-			);
-		}
-
 		if (isPacked && !typeSupportedByOldABIEncoder(*argType, false /* isLibrary */))
 		{
 			m_errorReporter.typeError(
 				9578_error,
-				arguments[i]->location(),
+				argument->location(),
 				"Type not supported in packed mode."
 			);
 			continue;
@@ -2090,7 +2085,7 @@ void TypeChecker::typeCheckABIEncodeFunctions(
 		if (!argType->fullEncodingType(false, abiEncoderV2, !_functionType->padArguments()))
 			m_errorReporter.typeError(
 				2056_error,
-				arguments[i]->location(),
+				argument->location(),
 				"This type cannot be encoded."
 			);
 	}
