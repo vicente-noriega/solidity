@@ -2035,7 +2035,7 @@ void TypeChecker::typeCheckABIEncodeFunctions(
 	}
 
 	// Check additional arguments for variadic functions
-	for (auto const& argument : _functionCall.arguments())
+	for (auto const& argument: _functionCall.arguments())
 	{
 		Type const* argType = type(*argument);
 

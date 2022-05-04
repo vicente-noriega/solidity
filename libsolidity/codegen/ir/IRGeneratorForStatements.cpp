@@ -492,75 +492,46 @@ bool IRGeneratorForStatements::visit(TupleExpression const& _tuple)
 {
 	setLocation(_tuple);
 
-	//if (_tuple.isInlineArray())
-	/*{
-		auto const& arrayType = dynamic_cast<ArrayType const&>(*_tuple.annotation().type);
-		solAssert(!arrayType.isDynamicallySized(), "Cannot create dynamically sized inline array.");
-		define(_tuple) <<
-			m_utils.allocateMemoryArrayFunction(arrayType) <<
-			"(" <<
-			_tuple.components().size() <<
-			")\n";
-
-		string mpos = IRVariable(_tuple).part("mpos").name();
-		Type const& baseType = *arrayType.baseType();
-		for (size_t i = 0; i < _tuple.components().size(); i++)
-		{
-			Expression const& component = *_tuple.components()[i];
-			component.accept(*this);
-			setLocation(_tuple);
-			IRVariable converted = convert(component, baseType);
-			appendCode() <<
-				m_utils.writeToMemoryFunction(baseType) <<
-				"(" <<
-				("add(" + mpos + ", " + to_string(i * arrayType.memoryStride()) + ")") <<
-				", " <<
-				converted.commaSeparatedList() <<
-				")\n";
-		}
-	}*/
-	//else
+	bool willBeWrittenTo = _tuple.annotation().willBeWrittenTo;
+	if (willBeWrittenTo)
+		solAssert(!m_currentLValue);
+	if (!_tuple.isInlineArray() && _tuple.components().size() == 1)
 	{
-		bool willBeWrittenTo = _tuple.annotation().willBeWrittenTo;
+		solAssert(_tuple.components().front());
+		_tuple.components().front()->accept(*this);
+		setLocation(_tuple);
 		if (willBeWrittenTo)
-			solAssert(!m_currentLValue);
-		if (!_tuple.isInlineArray() && _tuple.components().size() == 1)
-		{
-			solAssert(_tuple.components().front());
-			_tuple.components().front()->accept(*this);
-			setLocation(_tuple);
-			if (willBeWrittenTo)
-				solAssert(!!m_currentLValue);
-			else
-				define(_tuple, *_tuple.components().front());
-		}
+			solAssert(!!m_currentLValue);
 		else
-		{
-			vector<optional<IRLValue>> lvalues;
-			for (size_t i = 0; i < _tuple.components().size(); ++i)
-				if (auto const& component = _tuple.components()[i])
-				{
-					component->accept(*this);
-					setLocation(_tuple);
-					if (willBeWrittenTo)
-					{
-						solAssert(!!m_currentLValue);
-						lvalues.emplace_back(std::move(m_currentLValue));
-						m_currentLValue.reset();
-					}
-					else
-						define(IRVariable(_tuple).tupleComponent(i), *component);
-				}
-				else if (willBeWrittenTo)
-					lvalues.emplace_back();
-
-			if (_tuple.annotation().willBeWrittenTo)
-				m_currentLValue.emplace(IRLValue{
-					*_tuple.annotation().type,
-					IRLValue::Tuple{std::move(lvalues)}
-				});
-		}
+			define(_tuple, *_tuple.components().front());
 	}
+	else
+	{
+		vector<optional<IRLValue>> lvalues;
+		for (size_t i = 0; i < _tuple.components().size(); ++i)
+			if (auto const& component = _tuple.components()[i])
+			{
+				component->accept(*this);
+				setLocation(_tuple);
+				if (willBeWrittenTo)
+				{
+					solAssert(!!m_currentLValue);
+					lvalues.emplace_back(std::move(m_currentLValue));
+					m_currentLValue.reset();
+				}
+				else
+					define(IRVariable(_tuple).tupleComponent(i), *component);
+			}
+			else if (willBeWrittenTo)
+				lvalues.emplace_back();
+
+		if (_tuple.annotation().willBeWrittenTo)
+			m_currentLValue.emplace(IRLValue{
+				*_tuple.annotation().type,
+				IRLValue::Tuple{std::move(lvalues)}
+			});
+	}
+
 	return false;
 }
 

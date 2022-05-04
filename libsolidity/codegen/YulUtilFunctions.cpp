@@ -2831,22 +2831,26 @@ string YulUtilFunctions::updateStorageValueFunction(
 		solAssert(toReferenceType, "");
 
 		Whiskers templ(R"(
-			function <functionName>(slot, <?dynamicOffset>offset, </dynamicOffset><value>) {
+			function <functionName>(slot<?dynamicOffset>,offset </dynamicOffset><extraParams>) {
 				<?dynamicOffset>if offset { <panic>() }</dynamicOffset>
-				<copyToStorage>(slot, <value>)
+				<copyToStorage>(slot<extraParams>)
 			}
 		)");
 		templ("functionName", functionName);
 		templ("dynamicOffset", !_offset.has_value());
 		templ("panic", panicFunction(PanicCode::Generic));
-		templ("value", suffixedVariableNameList("value_", 0, _fromType.sizeOnStack()));
 
 		if (_fromType.category() == Type::Category::InlineArray)
 		{
+			solAssert(_toType.category() == Type::Category::Array, "");
+			solAssert(!dynamic_cast<ArrayType const&>(*toReferenceType).isByteArrayOrString(), "");
+
+			templ("extraParams",  ", " + suffixedVariableNameList("value_", 0, _fromType.sizeOnStack()));
 			templ("copyToStorage", copyInlineArrayToStorageFunction(
 				dynamic_cast<InlineArrayType const&>(_fromType),
 				dynamic_cast<ArrayType const&>(_toType)
 			));
+
 			return templ.render();
 		}
 
@@ -2857,17 +2861,10 @@ string YulUtilFunctions::updateStorageValueFunction(
 			auto const& toArrayType = dynamic_cast<ArrayType const&>(*toReferenceType);
 			solAssert(toArrayType.isByteArrayOrString(), "");
 
-			return Whiskers(R"(
-				function <functionName>(slot<?dynamicOffset>, offset</dynamicOffset>) {
-					<?dynamicOffset>if offset { <panic>() }</dynamicOffset>
-					<copyToStorage>(slot)
-				}
-			)")
-			("functionName", functionName)
-			("dynamicOffset", !_offset.has_value())
-			("panic", panicFunction(PanicCode::Generic))
-			("copyToStorage", copyLiteralToStorageFunction(dynamic_cast<StringLiteralType const&>(_fromType).value()))
-			.render();
+			templ("extraParams", "");
+			templ("copyToStorage", copyLiteralToStorageFunction(dynamic_cast<StringLiteralType const&>(_fromType).value()));
+
+			return templ.render();
 		}
 
 		solAssert(*toReferenceType->copyForLocation(
@@ -2881,7 +2878,7 @@ string YulUtilFunctions::updateStorageValueFunction(
 			solAssert(toReferenceType->category() == fromReferenceType->category(), "");
 		solAssert(_offset.value_or(0) == 0, "");
 
-
+		templ("extraParams",  ", " + suffixedVariableNameList("value_", 0, _fromType.sizeOnStack()));
 		if (_fromType.category() == Type::Category::Array)
 			templ("copyToStorage", copyArrayToStorageFunction(
 				dynamic_cast<ArrayType const&>(_fromType),
