@@ -678,7 +678,7 @@ string ABIFunctions::abiEncodingFunctionInlineArray(
 			)")
 			("value", suffixedVariableNameList("var_", stackItemIndex, stackItemIndex + type->sizeOnStack()))
 			("usesTail", usesTail)
-			("encodeToMemoryFun", abiEncodeAndReturnUpdatedPosFunction(*_from.componentsCommonMobileType(), *_to.baseType(), subOptions))
+			("encodeToMemoryFun", abiEncodeAndReturnUpdatedPosFunction(*type, *_to.baseType(), subOptions))
 			.render();
 
 			stackItemIndex += type->sizeOnStack();
