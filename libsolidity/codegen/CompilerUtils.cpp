@@ -31,6 +31,7 @@
 #include <libsolutil/FunctionSelector.h>
 #include <libevmasm/Instruction.h>
 #include <libsolutil/Whiskers.h>
+#include <range/v3/view/reverse.hpp>
 
 using namespace std;
 using namespace solidity;
@@ -1118,18 +1119,9 @@ void CompilerUtils::convertType(
 		InlineArrayType const& inlineArray = dynamic_cast<InlineArrayType const&>(_typeOnStack);
 		ArrayType const& arrayType = dynamic_cast<ArrayType const&>(_targetType);
 
-		unsigned const stackSize = inlineArray.sizeOnStack();
+		solAssert(arrayType.location() == DataLocation::Memory);
+
 		auto const& components = inlineArray.components();
-
-		// stack: <source ref>
-		unsigned movedComponentsStackSize = 0;
-		for (unsigned i = 0; i < components.size() - 1; ++i)
-		{
-			unsigned const componentSizeOnStack = components[i]->sizeOnStack();
-			moveIntoStack(stackSize - movedComponentsStackSize - componentSizeOnStack, componentSizeOnStack);
-			movedComponentsStackSize += componentSizeOnStack;
-		}
-
 		m_context << u256(components.size());
 		// stack: <source ref> <length>
 		ArrayUtils(m_context).convertLengthToSize(arrayType, true);
@@ -1143,27 +1135,35 @@ void CompilerUtils::convertType(
 		// stack: <source ref> <mem start>
 		m_context << Instruction::DUP1;
 		// stack: <source ref> <mem start> <mem start>
-		//moveIntoStack(1 + stackSize);
-		// stack:  <source ref> <mem start> <mem start>
 		if (arrayType.isDynamicallySized())
 		{
 			m_context << u256(components.size());
-			// stack e.g. stackSize=1: <mem start> <source ref> <mem start> <length>
+			// stack: <source ref> <mem start> <mem start> <length>
 			storeInMemoryDynamic(*TypeProvider::uint256());
 			// memory[<mem start>] = <length>
 			// stack:  <source ref> <mem start> <mem data pos>
 		}
 
 		// stack:  <source ref> <mem start> <mem data pos>
-		for (Type const* component: components)
+		m_context << u256(arrayType.memoryDataSize()) << Instruction::ADD;
+		// stack:  <source ref> <mem start> <mem data end>
+		for (Type const* component: components | ranges::views::reverse)
 		{
+			// stack:  <source ref> <mem start> <component end>
+			m_context << u256(arrayType.memoryStride()) << Instruction::SWAP1 << Instruction::SUB;
+			// stack:  <source ref> <mem start> <component pos>
+			m_context << Instruction::DUP1;
+			// stack:  <source ref> <mem start> <component pos> <component pos>
+
 			unsigned const componentSize = component->sizeOnStack();
-			moveToStackTop(2, componentSize);
-			// stack: <source ref> <mem start> <mem data pos> <value>
+			moveToStackTop(3, componentSize);
+			// stack:  <source ref> <mem start> <component pos> <component pos> <value>
 			convertType(*component, *arrayType.baseType());
-			// stack: <source ref> <mem start> <mem data pos> <converted value>
+			// stack:  <source ref> <mem start> <component pos> <component pos> <converted value>
 			storeInMemoryDynamic(*arrayType.baseType());
-			// stack: <source ref> <mem start> <mem data pos>
+			// stack:  <source ref> <mem start> <component pos> <component end>
+			m_context << Instruction::POP;
+			// stack: <source ref> <mem start> <component pos>
 		}
 		// stack: <mem start> <mem data pos>
 		m_context << Instruction::POP;

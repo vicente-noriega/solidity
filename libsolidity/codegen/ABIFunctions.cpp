@@ -291,7 +291,9 @@ string ABIFunctions::abiEncodingFunction(
 	{
 		solAssert(_to.category() == Type::Category::Array);
 		return abiEncodingFunctionInlineArray(
-			dynamic_cast<InlineArrayType const&>(_from), dynamic_cast<ArrayType const&>(_to), _options);
+			dynamic_cast<InlineArrayType const&>(_from),
+			dynamic_cast<ArrayType const&>(_to),
+			_options);
 
 	}
 	else if (auto toArray = dynamic_cast<ArrayType const*>(&to))
@@ -684,30 +686,28 @@ string ABIFunctions::abiEncodingFunctionInlineArray(
 			stackItemIndex += type->sizeOnStack();
 		}
 
-		return Whiskers(
-			R"(
-				// <readableTypeNameFrom> -> <readableTypeNameTo>
-				function <functionName>(<values>, pos) <return> {
-					let length := <length>
-					pos := <storeLength>(pos, length)
+		return Whiskers(R"(
+			// <readableTypeNameFrom> -> <readableTypeNameTo>
+			function <functionName>(<values>, pos) <return> {
+				let length := <length>
+				pos := <storeLength>(pos, length)
 
-					<?usesTail>
-						let headStart := pos
-						let tail := add(pos, mul(length, 0x20))
-						<#member>
-							<setMember>
-						</member>
-						pos := tail
-					<!usesTail>
-						<#member>
-							<setMember>
-						</member>
-					</usesTail>
+				<?usesTail>
+					let headStart := pos
+					let tail := add(pos, mul(length, 0x20))
+					<#member>
+						<setMember>
+					</member>
+					pos := tail
+				<!usesTail>
+					<#member>
+						<setMember>
+					</member>
+				</usesTail>
 
-					<assignEnd>
-				}
-			)"
-		)
+				<assignEnd>
+			}
+		)")
 		("functionName", functionName)
 		("member", std::move(memberSetValues))
 		("length", to_string(_from.components().size()))

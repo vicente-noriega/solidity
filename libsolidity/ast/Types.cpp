@@ -2713,15 +2713,19 @@ BoolResult InlineArrayType::isImplicitlyConvertibleTo(Type const& _other) const
 	auto arrayType = dynamic_cast<ArrayType const*>(&_other);
 
 	if (!arrayType || arrayType->isByteArrayOrString())
-		return false;
+		return BoolResult::err("Array literal can not be converted to byte array or string.");
 	else
 	{
 		if (!arrayType->isDynamicallySized() && arrayType->length() != components().size())
-			return false; //TODO return string
+			return BoolResult::err(
+				"Number of components in array literal (" + to_string(components().size()) + ") " +
+				"does not match array size (" + to_string(arrayType->length().convert_to<unsigned>()) + ").");
 
 		for (Type const* c: components())
 			if (!c->isImplicitlyConvertibleTo(*arrayType->baseType()))
-				return false;
+				return BoolResult::err(
+					"Invalid conversion from " + c->toString(false) +
+					" to " + arrayType->baseType()->toString(false));
 
 		return true;
 	}
@@ -2759,19 +2763,6 @@ u256 InlineArrayType::storageSize() const
 
 Type const* InlineArrayType::mobileType() const
 {
-	TypePointers mobiles;
-	for (auto const& c: components())
-	{
-		if (c)
-		{
-			auto mt = c->mobileType();
-			if (!mt)
-				return nullptr;
-			mobiles.push_back(mt);
-		}
-		else
-			mobiles.push_back(nullptr);
-	}
 	return TypeProvider::array(
 		DataLocation::Memory,
 		componentsCommonMobileType(),
@@ -2781,22 +2772,16 @@ Type const* InlineArrayType::mobileType() const
 
 Type const* InlineArrayType::componentsCommonMobileType() const
 {
+	solAssert(!m_components.empty(), "Empty array literal");
 	Type const* commonType = nullptr;
+
 	for (Type const* type: m_components)
-		commonType = commonType ?
-					Type::commonType(commonType, type->mobileType()) : type->mobileType();
+		commonType =
+			commonType ?
+			Type::commonType(commonType, type->mobileType()) :
+			type->mobileType();
+
 	return TypeProvider::withLocationIfReference(DataLocation::Memory, commonType);
-}
-
-Type const* InlineArrayType::fullEncodingType(bool _inLibraryCall, bool _encoderV2, bool _packed) const
-{
-	ArrayType const& arrayType = *TypeProvider::array(
-		DataLocation::Memory,
-		componentsCommonMobileType(),
-		components().size()
-	);
-
-	return arrayType.fullEncodingType(_inLibraryCall, _encoderV2, _packed);
 }
 
 vector<tuple<string, Type const*>> InlineArrayType::makeStackItems() const
