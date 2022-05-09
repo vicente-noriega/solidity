@@ -4,4 +4,4 @@ contract C {
         }
 }
 // ----
-// TypeError 7407: (111-126): Type inline_array(literal_string hex"c0a80101") is not implicitly convertible to expected type string memory[1] memory. Invalid conversion from literal_string hex"c0a80101" to string memory
+// TypeError 7407: (110-125): Type inline_array(literal_string hex"c0a80101") is not implicitly convertible to expected type string memory[1] memory. Invalid conversion from literal_string hex"c0a80101" to string memory

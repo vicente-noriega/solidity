@@ -1428,6 +1428,7 @@ bool TypeChecker::visit(Conditional const& _conditional)
 	else if (trueType && falseType)
 	{
 		commonType = Type::commonType(trueType, falseType);
+
 		if (!commonType)
 		{
 			m_errorReporter.typeError(

@@ -47,6 +47,7 @@
 #include <libsolutil/FunctionSelector.h>
 #include <libsolutil/Visitor.h>
 
+#include <range/v3/view/enumerate.hpp>
 #include <range/v3/view/transform.hpp>
 
 using namespace std;
@@ -508,8 +509,10 @@ bool IRGeneratorForStatements::visit(TupleExpression const& _tuple)
 	else
 	{
 		vector<optional<IRLValue>> lvalues;
-		for (size_t i = 0; i < _tuple.components().size(); ++i)
-			if (auto const& component = _tuple.components()[i])
+
+		for (auto&& [index, component]: _tuple.components() | ranges::views::enumerate)
+		{
+			if (component)
 			{
 				component->accept(*this);
 				setLocation(_tuple);
@@ -520,10 +523,11 @@ bool IRGeneratorForStatements::visit(TupleExpression const& _tuple)
 					m_currentLValue.reset();
 				}
 				else
-					define(IRVariable(_tuple).tupleComponent(i), *component);
+					define(IRVariable(_tuple).tupleComponent(index), *component);
 			}
 			else if (willBeWrittenTo)
 				lvalues.emplace_back();
+		}
 
 		if (_tuple.annotation().willBeWrittenTo)
 			m_currentLValue.emplace(IRLValue{

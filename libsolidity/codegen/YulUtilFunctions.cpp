@@ -3812,15 +3812,6 @@ string YulUtilFunctions::inlineArrayConversionFunction(InlineArrayType const& _f
 	if (!_to.isDynamicallySized())
 		solAssert(_to.length() == _from.components().size());
 
-	// TODO
-	// Other cases are done explicitly in LValue::storeValue, and only possible by assignment.
-	/*if (_to.location() == DataLocation::Storage)
-		solAssert(
-			(_to.isPointer() || (_from.isByteArrayOrString() && _to.isByteArrayOrString())) &&
-			_from.location() == DataLocation::Storage,
-			"Invalid conversion to storage type."
-		);
-	*/
 	string functionName =
 		"convert_inline_array_" +
 		_from.identifier() +

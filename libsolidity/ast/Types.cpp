@@ -2787,16 +2787,9 @@ Type const* InlineArrayType::componentsCommonMobileType() const
 vector<tuple<string, Type const*>> InlineArrayType::makeStackItems() const
 {
 	vector<tuple<string, Type const*>> slots;
-	unsigned i = 1;
-	for (auto const& t: components())
-	{
-		slots.emplace_back("component_" + std::to_string(i), t);
-		++i;
-	}
+	for (auto && [index, type]: components() | ranges::views::enumerate)
+		slots.emplace_back("component_" + std::to_string(index + 1), type);
 	return slots;
-
-	//TODO do we want to keep everything on the stack?
-	//return {std::make_tuple("mpos", TypeProvider::uint256())};
 }
 
 
