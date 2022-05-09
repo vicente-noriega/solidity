@@ -4,6 +4,7 @@ Language Features:
 
 
 Compiler Features:
+ * Language Server: Always adds ``{project_root}/node_modules`` to include search paths.
 
 
 Bugfixes:
