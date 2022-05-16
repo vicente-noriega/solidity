@@ -5,6 +5,7 @@ Language Features:
 
 Compiler Features:
  * Language Server: Always adds ``{project_root}/node_modules`` to include search paths.
+ * Language Server: Adds support for configuring extra include paths ``include-paths`` JSON settings object that can be passed during LSP configuration stage.
 
 
 Bugfixes:

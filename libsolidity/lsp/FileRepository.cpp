@@ -36,9 +36,23 @@ using solidity::util::readFileAsString;
 using solidity::util::joinHumanReadable;
 using solidity::util::Result;
 
-FileRepository::FileRepository(boost::filesystem::path _basePath): m_basePath(std::move(_basePath))
+FileRepository::FileRepository(boost::filesystem::path _basePath, std::vector<boost::filesystem::path> _includePaths):
+	m_basePath(std::move(_basePath))
 {
-	m_includePaths.emplace_back(m_basePath / "node_modules");
+	setIncludePaths(move(_includePaths));
+}
+
+void FileRepository::setIncludePaths(std::vector<boost::filesystem::path> _paths)
+{
+	// Prefix relative paths with base-path.
+	for (auto& path: _paths)
+		if (path.is_relative())
+			path = m_basePath / path;
+
+	// Always have {projectRoot}/node_modules in the include-paths.
+	_paths.emplace_back(m_basePath / "node_modules");
+
+	m_includePaths = std::move(_paths);
 }
 
 string FileRepository::sourceUnitNameToUri(string const& _sourceUnitName) const

@@ -83,7 +83,7 @@ LanguageServer::LanguageServer(Transport& _transport):
 		{"textDocument/implementation", GotoDefinition(*this) },
 		{"workspace/didChangeConfiguration", bind(&LanguageServer::handleWorkspaceDidChangeConfiguration, this, _2)},
 	},
-	m_fileRepository("/" /* basePath */),
+	m_fileRepository("/" /* basePath */, {} /* no search paths */),
 	m_compilerStack{m_fileRepository.reader()}
 {
 }
@@ -101,6 +101,21 @@ Json::Value LanguageServer::toJson(SourceLocation const& _location)
 void LanguageServer::changeConfiguration(Json::Value const& _settings)
 {
 	m_settingsObject = _settings;
+	Json::Value jsonIncludePaths = _settings["include-paths"];
+	if (jsonIncludePaths && jsonIncludePaths.isArray())
+	{
+		std::vector<boost::filesystem::path> includePaths;
+		for (Json::Value jsonPath: jsonIncludePaths)
+		{
+			if (!jsonPath.isString())
+			{
+				m_client.trace("Invalid JSON configuration passed. \"include-paths\" must be an array of strings.");
+				continue;
+			}
+			includePaths.emplace_back(boost::filesystem::path(jsonPath.asString()));
+		}
+		m_fileRepository.setIncludePaths(move(includePaths));
+	}
 }
 
 void LanguageServer::compile()
@@ -108,7 +123,7 @@ void LanguageServer::compile()
 	// For files that are not open, we have to take changes on disk into account,
 	// so we just remove all non-open files.
 
-	FileRepository oldRepository(m_fileRepository.basePath());
+	FileRepository oldRepository(m_fileRepository.basePath(), m_fileRepository.includePaths());
 	swap(oldRepository, m_fileRepository);
 
 	for (string const& fileName: m_openFiles)
@@ -255,7 +270,7 @@ void LanguageServer::handleInitialize(MessageID _id, Json::Value const& _args)
 	else if (Json::Value rootPath = _args["rootPath"])
 		rootPath = rootPath.asString();
 
-	m_fileRepository = FileRepository(rootPath);
+	m_fileRepository = FileRepository(rootPath, {});
 	if (_args["initializationOptions"].isObject())
 		changeConfiguration(_args["initializationOptions"]);
 
