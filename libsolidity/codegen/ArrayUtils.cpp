@@ -35,6 +35,9 @@
 #include <libevmasm/Instruction.h>
 #include <liblangutil/Exceptions.h>
 
+#include <range/v3/view/reverse.hpp>
+#include <range/v3/view/enumerate.hpp>
+
 using namespace std;
 using namespace solidity;
 using namespace solidity::evmasm;
@@ -280,23 +283,17 @@ void ArrayUtils::copyArrayToStorage(ArrayType const& _targetType, ArrayType cons
 					<< swapInstruction(1 + byteOffsetSize);
 			_context.appendJumpTo(copyLoopStart);
 			_context << copyLoopEnd;
+
+			_context << copyLoopEndWithoutByteOffset;
+
 			if (haveByteOffsetTarget)
 			{
-				// clear elements that might be left over in the current slot in target
-				// stack: target_ref target_data_end source_data_pos target_data_pos source_data_end target_byte_offset [source_byte_offset]
-				_context << dupInstruction(byteOffsetSize) << Instruction::ISZERO;
-				evmasm::AssemblyItem copyCleanupLoopEnd = _context.appendConditionalJump();
-				_context << dupInstruction(2 + byteOffsetSize) << dupInstruction(1 + byteOffsetSize);
-				StorageItem(_context, *targetBaseType).setToZero(SourceLocation(), true);
-				utils.incrementByteOffset(targetBaseType->storageBytes(), byteOffsetSize, byteOffsetSize + 2);
-				_context.appendJumpTo(copyLoopEnd);
-
-				_context << copyCleanupLoopEnd;
+				utils.clearLeftoversInSlot(*targetBaseType, byteOffsetSize, 2 + byteOffsetSize);
 				_context << Instruction::POP; // might pop the source, but then target is popped next
 			}
+
 			if (haveByteOffsetSource)
 				_context << Instruction::POP;
-			_context << copyLoopEndWithoutByteOffset;
 
 			// zero-out leftovers in target
 			// stack: target_ref target_data_end source_data_pos target_data_pos_updated source_data_end
@@ -309,6 +306,133 @@ void ArrayUtils::copyArrayToStorage(ArrayType const& _targetType, ArrayType cons
 			_context << Instruction::POP;
 		}
 	);
+}
+void ArrayUtils::clearLeftoversInSlot(Type const& _type, unsigned _byteOffsetPosition, unsigned _storageOffsetPosition) const
+{
+	// clear elements that might be left over in the current slot in target
+	// stack: target_ref target_data_end source_data_pos target_data_pos source_data_end target_byte_offset [source_byte_offset]
+
+	auto cleanupLoopStart = m_context.newTag();
+	m_context << cleanupLoopStart;
+
+	m_context << dupInstruction(_byteOffsetPosition) << Instruction::ISZERO;
+	evmasm::AssemblyItem copyCleanupLoopEnd = m_context.appendConditionalJump();
+	m_context << dupInstruction(_storageOffsetPosition) << dupInstruction(_byteOffsetPosition + 1);
+	StorageItem(m_context, _type).setToZero(SourceLocation(), true);
+	incrementByteOffset(_type.storageBytes(), _byteOffsetPosition, _storageOffsetPosition);
+	m_context.appendJumpTo(cleanupLoopStart);
+
+	m_context << copyCleanupLoopEnd;
+}
+
+void ArrayUtils::moveInlineArrayToStorage(
+	ArrayType const& _targetType,
+	InlineArrayType const& _sourceType,
+	unsigned _sourcePosition) const
+{
+	// stack: source... ... target_ref
+	solAssert(!_targetType.containsNestedMapping());
+	solAssert(!_targetType.isByteArrayOrString());
+	solAssert(_sourceType.components().size() > 0);
+
+	Type const* arrayBaseType = _targetType.baseType();
+	bool const hasByteOffset = arrayBaseType->storageBytes() <= 16;
+
+	if (_targetType.isDynamicallySized())
+	{
+		m_context << u256(_sourceType.components().size());
+		// stack: source... ... target_ref source_length
+		m_context << Instruction::DUP2 << Instruction::SSTORE;
+		// stack: source... ... target_ref
+		m_context << Instruction::DUP1;
+		CompilerUtils(m_context).computeHashStatic();
+		++_sourcePosition;
+		// stack: source... ... target_ref target_data_pos
+	}
+
+	for (auto&& [index, sourceComponentType]:
+		_sourceType.components() | ranges::views::enumerate | ranges::views::reverse)
+	{
+		solAssert(arrayBaseType->nameable(), "");
+
+		if (ArrayType const* targetType = dynamic_cast<ArrayType const*>(_targetType.baseType()))
+		{
+			InlineArrayType const* sourceType = dynamic_cast<InlineArrayType const*>(sourceComponentType);
+			solAssert(sourceType);
+
+			// stack: source... ... target_ref target_data_pos
+			m_context
+				<< Instruction::DUP1
+				<< u256(targetType->storageSize() * index) << Instruction::ADD;
+			// stack: source... ... target_ref target_data_pos component_data_ref
+			moveInlineArrayToStorage(*targetType, *sourceType, _sourcePosition + 1);
+			// stack: source... ... target_ref target_data_pos component_data_ref
+			m_context << Instruction::POP;
+			// stack: source... ... target_ref target_data_pos
+		}
+		else
+		{
+			// stack: source... ... target_ref target_data_pos
+			CompilerUtils(m_context).moveToStackTop(
+				_sourcePosition,
+				sourceComponentType->sizeOnStack()
+			);
+
+			// stack: source... ... target_ref target_data_pos value...
+			m_context << dupInstruction(1 + sourceComponentType->sizeOnStack());
+
+			Type const* stackType = sourceComponentType;
+			if (RationalNumberType const* rType = dynamic_cast<RationalNumberType const*>(sourceComponentType))
+			{
+				solUnimplementedAssert(!rType->isFractional(), "Not yet implemented - FixedPointType.");
+				stackType = rType->integerType();
+				CompilerUtils(m_context).convertType(*sourceComponentType, *stackType);
+			}
+
+			// stack: source... ... target_ref target_data_pos value... target_data_pos
+			computeStoragePosition(static_cast<unsigned>(index), arrayBaseType->storageBytes());
+			// stack: source... ... target_ref target_data_pos value... target_data_pos offset
+
+			if (index == _sourceType.components().size() && hasByteOffset)
+			{
+				m_context << Instruction::DUP2 << Instruction::DUP2;
+				clearLeftoversInSlot(*arrayBaseType, 1, 2);
+				m_context << Instruction::POP << Instruction::POP;
+			}
+
+			StorageItem(m_context, *arrayBaseType)
+				.storeValue(*stackType, SourceLocation(), true);
+			// stack: source... ... target_ref target_data_pos
+		}
+	}
+
+	// stack: source... ... target_ref target_data_pos
+	if (_targetType.isDynamicallySized())
+		m_context << Instruction::POP;
+	// stack: source... target_ref
+}
+
+void ArrayUtils::computeStoragePosition(unsigned _index, unsigned _byteSize) const
+{
+	// We do the following calculation:
+	// slot = element_index * element_byte_size / 32
+	// offset = element_index * element_byte_size % 32
+
+	// stack: slot
+	m_context << u256(_byteSize) << u256(_index) << Instruction::MUL;
+	// stack: slot byte_pos
+
+	m_context << Instruction::SWAP1;
+	// stack: byte_pos slot
+
+	m_context << u256(32) << Instruction::DUP3 << Instruction::DIV;
+	// stack: byte_pos slot slot_offset
+
+	m_context << Instruction::ADD << Instruction::SWAP1;
+	// stack: element_slot byte_pos
+
+	m_context << u256(32) << Instruction::SWAP1 << Instruction::MOD;
+	// stack: element_slot offset
 }
 
 void ArrayUtils::copyArrayToMemory(ArrayType const& _sourceType, bool _padToWordBoundaries) const

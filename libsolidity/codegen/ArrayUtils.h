@@ -31,6 +31,7 @@ namespace solidity::frontend
 class CompilerContext;
 class Type;
 class ArrayType;
+class InlineArrayType;
 
 /**
  * Class that provides code generation for handling arrays.
@@ -45,6 +46,16 @@ public:
 	/// Stack pre: source_reference [source_length] target_reference
 	/// Stack post: target_reference
 	void copyArrayToStorage(ArrayType const& _targetType, ArrayType const& _sourceType) const;
+
+	/// Moves an inline array from the stack to the storage.
+	/// @param sourcePosition the stack offset of the source
+	/// Stack pre: source ... target_reference
+	/// Stack post: target_reference
+	void moveInlineArrayToStorage(
+		ArrayType const& _targetType,
+		InlineArrayType const& _sourceType,
+		unsigned _sourcePosition = 1) const;
+
 	/// Copies the data part of an array (which cannot be dynamically nested) from anywhere
 	/// to a given position in memory.
 	/// This always copies contained data as is (i.e. structs and fixed-size arrays are copied in
@@ -113,6 +124,23 @@ private:
 	/// @param byteOffsetPosition the stack offset of the storage byte offset
 	/// @param storageOffsetPosition the stack offset of the storage slot offset
 	void incrementByteOffset(unsigned _byteSize, unsigned _byteOffsetPosition, unsigned _storageOffsetPosition) const;
+
+	/// Appends code that computes a storage position of the array element.
+	/// @param index array element index
+	/// @param byteSize array element size in bytes
+	/// Stack pre: storage_slot
+	/// Stack post: element_slot byte_offset
+	void computeStoragePosition(unsigned _index, unsigned _byteSize) const;
+
+	/// Appends code that set to zero all elements in slot starting at offset.
+	/// Slot and offset are updated to show next slot.
+	/// @param type element type
+	/// @param byteOffsetPosition the stack offset of the storage byte offset
+	/// @param storageOffsetPosition the stack offset of the storage slot offset
+	/// Stack pre: ... slot offset ...
+	/// Stack post: ... slot offset ...
+	void clearLeftoversInSlot(Type const& _type, unsigned _byteOffsetPosition, unsigned _storageOffsetPosition) const;
+
 
 	CompilerContext& m_context;
 };
