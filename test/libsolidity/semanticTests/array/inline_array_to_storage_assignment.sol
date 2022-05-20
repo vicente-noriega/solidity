@@ -1,6 +1,6 @@
 contract C {
     uint8[3] st = [1, 2, 3];
-    uint8[] public dt = [4, 5, 6]; 
+    uint8[] public dt = [4, 5, 6];
 
     function s() public returns (uint8[3] memory) {
         return st;

@@ -1911,9 +1911,8 @@ string YulUtilFunctions::copyInlineArrayToStorageFunction(InlineArrayType const&
 		for (Type const* type: _fromType.components())
 		{
 			memberSetValues.emplace_back();
-
 			memberSetValues.back()["setMember"] = Whiskers(R"({
-				<updateStorageValue>(elementSlot, elementOffset, <value>)
+				<updateStorageValue>(elementSlot, elementOffset<value>)
 
 				<?multipleItemsPerSlot>
 					elementOffset := add(elementOffset, <storageStride>)
@@ -1925,7 +1924,8 @@ string YulUtilFunctions::copyInlineArrayToStorageFunction(InlineArrayType const&
 					elementSlot := add(elementSlot, <storageSize>)
 				</multipleItemsPerSlot>
 			})")
-			("value", suffixedVariableNameList("var_", stackItemIndex, stackItemIndex + type->sizeOnStack()))
+			("value", _fromType.sizeOnStack() ?
+				", " + suffixedVariableNameList("var_", stackItemIndex, stackItemIndex + type->sizeOnStack()) : "")
 			("multipleItemsPerSlot", _toType.storageStride() <= 16)
 			("storageStride", to_string(_toType.storageStride()))
 			("storageSize", _toType.baseType()->storageSize().str())
@@ -1936,7 +1936,7 @@ string YulUtilFunctions::copyInlineArrayToStorageFunction(InlineArrayType const&
 		}
 
 		Whiskers templ(R"(
-			function <functionName>(slot, <values>) {
+			function <functionName>(slot<values>) {
 				let length := <arrayLength>
 				<resizeArray>(slot, length)
 
@@ -1951,7 +1951,8 @@ string YulUtilFunctions::copyInlineArrayToStorageFunction(InlineArrayType const&
 		if (_fromType.dataStoredIn(DataLocation::Storage))
 			solAssert(!_fromType.isValueType(), "");
 		templ("functionName", functionName);
-		templ("values", suffixedVariableNameList("var_", 0, _fromType.sizeOnStack()));
+		templ("values", _fromType.sizeOnStack() ?
+			", " + suffixedVariableNameList("var_", 0, _fromType.sizeOnStack()) : "");
 		templ("arrayLength", to_string(_fromType.components().size()));
 		templ("resizeArray", resizeArrayFunction(_toType));
 		templ("dstDataLocation", arrayDataAreaFunction(_toType));
@@ -2839,7 +2840,8 @@ string YulUtilFunctions::updateStorageValueFunction(
 			solAssert(_toType.category() == Type::Category::Array, "");
 			solAssert(!dynamic_cast<ArrayType const&>(*toReferenceType).isByteArrayOrString(), "");
 
-			templ("extraParams",  ", " + suffixedVariableNameList("value_", 0, _fromType.sizeOnStack()));
+			templ("extraParams",  _fromType.sizeOnStack() ?
+				", " + suffixedVariableNameList("value_", 0, _fromType.sizeOnStack()) : "");
 			templ("copyToStorage", copyInlineArrayToStorageFunction(
 				dynamic_cast<InlineArrayType const&>(_fromType),
 				dynamic_cast<ArrayType const&>(_toType)

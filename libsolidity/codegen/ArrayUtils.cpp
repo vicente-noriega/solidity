@@ -357,16 +357,22 @@ void ArrayUtils::moveInlineArrayToStorage(
 
 		if (ArrayType const* targetType = dynamic_cast<ArrayType const*>(_targetType.baseType()))
 		{
-			InlineArrayType const* sourceType = dynamic_cast<InlineArrayType const*>(sourceComponentType);
-			solAssert(sourceType);
-
 			// stack: source... ... target_ref target_data_pos
 			m_context
 				<< Instruction::DUP1
 				<< u256(targetType->storageSize() * index) << Instruction::ADD;
 			// stack: source... ... target_ref target_data_pos component_data_ref
-			moveInlineArrayToStorage(*targetType, *sourceType, _sourcePosition + 1);
-			// stack: source... ... target_ref target_data_pos component_data_ref
+
+			if (StringLiteralType const* stringLiteralType = dynamic_cast<StringLiteralType const*>(sourceComponentType))
+				copyLiteralToStorage(*stringLiteralType);
+			else
+			{
+				InlineArrayType const* sourceType = dynamic_cast<InlineArrayType const*>(sourceComponentType);
+				solAssert(sourceType);
+				moveInlineArrayToStorage(*targetType, *sourceType, _sourcePosition + 1);
+				// stack: source... ... target_ref target_data_pos component_data_ref
+			}
+
 			m_context << Instruction::POP;
 			// stack: source... ... target_ref target_data_pos
 		}
@@ -406,10 +412,59 @@ void ArrayUtils::moveInlineArrayToStorage(
 		}
 	}
 
-	// stack: source... ... target_ref target_data_pos
+	// stack: ... target_ref target_data_pos
 	if (_targetType.isDynamicallySized())
 		m_context << Instruction::POP;
-	// stack: source... target_ref
+	// stack: ... target_ref
+}
+
+void ArrayUtils::copyLiteralToStorage(StringLiteralType const& _sourceType) const
+{
+	bytesConstRef data(_sourceType.value());
+	// stack: target_ref
+	if (data.empty())
+		m_context << u256(0) << Instruction::DUP2 << Instruction::SSTORE;
+	else if (data.size() < 32)
+	{
+		// stack: target_ref
+		m_context
+			<< u256(util::h256(data, util::h256::AlignLeft))
+			<< u256(2)
+			<< u256(data.size())
+			<< Instruction::MUL
+			<< Instruction::ADD;
+		// stack: target_ref value
+		m_context << Instruction::DUP2 << Instruction::SSTORE;
+		// stack: target_ref
+	}
+	else
+	{
+		// stack: target_ref
+		m_context << Instruction::DUP1;
+		// stack: target_ref target_ref
+		m_context
+			<< u256(1) << u256(2) << u256(data.size())
+			<< Instruction::MUL << Instruction::ADD;
+		// stack: target_ref target_ref 2*length+1
+		m_context << Instruction::DUP2 << Instruction::SSTORE;
+		// stack: target_ref target_ref
+		CompilerUtils(m_context).computeHashStatic();
+		// stack: target_ref target_data_pos
+
+		for (size_t index = 0; index <= data.size() / 32; ++index)
+		{
+			// stack: target_ref target_data_pos
+			size_t const chunk = min<size_t>(32, data.size() - index * 32);
+			m_context << u256(util::h256(data.cropped(index * 32, chunk), util::h256::AlignLeft));
+			// stack: target_ref target_data_pos value
+			m_context << Instruction::DUP2 << Instruction::SSTORE;
+			// stack: target_ref target_data_pos
+			m_context << u256(1) << Instruction::ADD;
+			// stack: target_ref target_data_pos+1
+		}
+		m_context << Instruction::POP;
+		// stack: target_ref
+	}
 }
 
 void ArrayUtils::computeStoragePosition(unsigned _index, unsigned _byteSize) const
@@ -429,10 +484,10 @@ void ArrayUtils::computeStoragePosition(unsigned _index, unsigned _byteSize) con
 	// stack: byte_pos slot slot_offset
 
 	m_context << Instruction::ADD << Instruction::SWAP1;
-	// stack: element_slot byte_pos
+	// stack: target_slot byte_pos
 
 	m_context << u256(32) << Instruction::SWAP1 << Instruction::MOD;
-	// stack: element_slot offset
+	// stack: target_slot offset
 }
 
 void ArrayUtils::copyArrayToMemory(ArrayType const& _sourceType, bool _padToWordBoundaries) const

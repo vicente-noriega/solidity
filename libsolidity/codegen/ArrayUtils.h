@@ -28,10 +28,11 @@
 namespace solidity::frontend
 {
 
-class CompilerContext;
-class Type;
 class ArrayType;
+class CompilerContext;
 class InlineArrayType;
+class StringLiteralType;
+class Type;
 
 /**
  * Class that provides code generation for handling arrays.
@@ -50,7 +51,7 @@ public:
 	/// Moves an inline array from the stack to the storage.
 	/// @param sourcePosition the stack offset of the source
 	/// Stack pre: source ... target_reference
-	/// Stack post: target_reference
+	/// Stack post: ... target_reference
 	void moveInlineArrayToStorage(
 		ArrayType const& _targetType,
 		InlineArrayType const& _sourceType,
@@ -125,11 +126,17 @@ private:
 	/// @param storageOffsetPosition the stack offset of the storage slot offset
 	void incrementByteOffset(unsigned _byteSize, unsigned _byteOffsetPosition, unsigned _storageOffsetPosition) const;
 
+	/// Copy a string literal to the storage.
+	/// @param sourcePosition the stack offset of the source
+	/// Stack pre: target_reference
+	/// Stack post: target_reference
+	void copyLiteralToStorage(StringLiteralType const& _sourceType) const;
+
 	/// Appends code that computes a storage position of the array element.
 	/// @param index array element index
 	/// @param byteSize array element size in bytes
-	/// Stack pre: storage_slot
-	/// Stack post: element_slot byte_offset
+	/// Stack pre: slot
+	/// Stack post: target_slot byte_offset
 	void computeStoragePosition(unsigned _index, unsigned _byteSize) const;
 
 	/// Appends code that set to zero all elements in slot starting at offset.
