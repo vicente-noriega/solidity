@@ -43,13 +43,13 @@ function chainlink_test
     local config_var=config
 
     local compile_only_presets=(
-        ir-optimize-evm+yul       # Compiles but tests fail. See https://github.com/nomiclabs/hardhat/issues/2115
         legacy-no-optimize        # Tests crash on a machine with 8 GB of RAM in CI "FATAL ERROR: Ineffective mark-compacts near heap limit Allocation failed - JavaScript heap out of memory"
     )
     local settings_presets=(
         "${compile_only_presets[@]}"
         #ir-no-optimize           # Compilation fails with "YulException: Variable var__value_775 is 1 slot(s) too deep inside the stack."
         #ir-optimize-evm-only     # Compilation fails with "YulException: Variable var__value_10 is 1 slot(s) too deep inside the stack"
+        ir-optimize-evm+yul
         legacy-optimize-evm-only  # NOTE: This requires >= 4 GB RAM in CI not to crash
         legacy-optimize-evm+yul   # NOTE: This requires >= 4 GB RAM in CI not to crash
     )
